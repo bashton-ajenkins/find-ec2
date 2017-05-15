@@ -1,14 +1,17 @@
 #!/usr/bin/env python2
 
-import subprocess
 import argparse
+import hashlib
 import os
+import re
+import subprocess
 
 import boto
+import boto.ec2.autoscale
+
 from boto import ec2
 from boto import utils
 
-import hashlib
 
 from pystache import Renderer
 
@@ -77,26 +80,48 @@ if args.tagname:
 else:
     new_tags = args.tags
 
+
+def isTerminating(instance_id):
+    """
+    Determines whether or not an instance is terminating.
+
+    Returns True if the instance is terminating and False if it is in any other state.
+    """
+    try:
+        instance = autoscale.get_all_autoscaling_instances(instance_ids=[instance_id])
+
+        if re.search("state:(.*),", str(instance[0])).group(0).strip(',').split(':')[1].lower() == "terminating":
+                return True
+        else:
+                return False
+    # Default to continue so instances don't get removed in the event of an error when checking lifecycle state
+    except:
+        return False
+
 # Convert tags string to dict
 args_tags = dict(item.split("=") for item in new_tags.split(","))
 
 ec2conn = boto.connect_ec2(
         region=get_region(utils.get_instance_metadata()['placement']['availability-zone'][:-1]))
+
+autoscale = boto.ec2.autoscale.connect_to_region(utils.get_instance_metadata()['placement']['availability-zone'][:-1])
+
 vpc = get_vpc()
 for res in ec2conn.get_all_instances():
     for i in res.instances:
         try:
-            if compare_tags(i.tags,args_tags) and i.state == 'running' and i.vpc_id == vpc:
-                details = {
-                        'name': str(i.id + "-" + args.name).replace('-','_'), # Varnish doesn't allow dashes in names
-                        'host': i.private_ip_address,
-                        'az': i.placement
-                        }
-                if i.placement == utils.get_instance_metadata()['placement']['availability-zone']:
-                    details['weight'] = args.ownazweight
-                else:
-                    details['weight'] = 1
-                data['backends'].append(details)
+            if compare_tags(i.tags, args_tags) and i.state == 'running' and i.vpc_id == vpc:
+                if isTerminating(i.id):
+                    details = {
+                            'name': str(i.id + "-" + args.name).replace('-', '_'), # Varnish doesn't allow dashes in names
+                            'host': i.private_ip_address,
+                            'az': i.placement
+                            }
+                    if i.placement == utils.get_instance_metadata()['placement']['availability-zone']:
+                        details['weight'] = args.ownazweight
+                    else:
+                        details['weight'] = 1
+                        data['backends'].append(details)
         except:
             pass
 
