@@ -121,7 +121,7 @@ for res in ec2conn.get_all_instances():
                         details['weight'] = args.ownazweight
                     else:
                         details['weight'] = 1
-                        data['backends'].append(details)
+                    data['backends'].append(details)
         except:
             pass
 
