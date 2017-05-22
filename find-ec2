@@ -111,7 +111,7 @@ for res in ec2conn.get_all_instances():
     for i in res.instances:
         try:
             if compare_tags(i.tags, args_tags) and i.state == 'running' and i.vpc_id == vpc:
-                if isTerminating(i.id):
+                if not isTerminating(i.id):
                     details = {
                             'name': str(i.id + "-" + args.name).replace('-', '_'), # Varnish doesn't allow dashes in names
                             'host': i.private_ip_address,
